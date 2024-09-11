@@ -1,0 +1,159 @@
+[
+    {
+        "id": "f63565221e40ba98",
+        "type": "tab",
+        "label": "ukrgas test",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "4b3823680ccbda3d",
+        "type": "http in",
+        "z": "f63565221e40ba98",
+        "name": "",
+        "url": "/telegram",
+        "method": "post",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 140,
+        "y": 280,
+        "wires": [
+            [
+                "f4322b50632cc0c1",
+                "3b56aebb99a8214e"
+            ]
+        ]
+    },
+    {
+        "id": "537a2f036e72d6a1",
+        "type": "http response",
+        "z": "f63565221e40ba98",
+        "name": "resp",
+        "statusCode": "200",
+        "headers": {},
+        "x": 1010,
+        "y": 280,
+        "wires": []
+    },
+    {
+        "id": "f4322b50632cc0c1",
+        "type": "postgresql",
+        "z": "f63565221e40ba98",
+        "name": "sql create",
+        "query": "CREATE TABLE IF NOT EXISTS user_data (\n    record_id BIGINT PRIMARY KEY,\n    chat_id BIGINT,\n    first_name TEXT,\n    last_name TEXT,\n    birth_date DATE,\n    phone_number TEXT\n);\n",
+        "postgreSQLConfig": "b8aa45adc8e91f1b",
+        "split": false,
+        "rowsPerMsg": "",
+        "x": 280,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "2ceabf2c6aa5b8e5",
+        "type": "postgresql",
+        "z": "f63565221e40ba98",
+        "name": "sql insert",
+        "query": "INSERT INTO user_data (record_id, chat_id, first_name, last_name, birth_date, phone_number)\nVALUES ($1, $2, $3, $4, $5, $6);\n",
+        "postgreSQLConfig": "b8aa45adc8e91f1b",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 560,
+        "y": 200,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "postgresql_select",
+        "type": "postgresql",
+        "z": "f63565221e40ba98",
+        "name": "sql select",
+        "query": "SELECT record_id, chat_id, first_name, last_name, birth_date, phone_number FROM user_data WHERE chat_id = $1;",
+        "postgreSQLConfig": "b8aa45adc8e91f1b",
+        "split": false,
+        "rowsPerMsg": 1,
+        "outputs": 1,
+        "x": 540,
+        "y": 360,
+        "wires": [
+            [
+                "a1012dfd8fce7eb2"
+            ]
+        ]
+    },
+    {
+        "id": "a1012dfd8fce7eb2",
+        "type": "function",
+        "z": "f63565221e40ba98",
+        "name": "build data message",
+        "func": "let data = msg.payload;\n\nif (data && data.length > 0) {\n    let messages = [];\n\n    data.forEach(userData => {\n        let recordId = userData.record_id;\n        let firstName = userData.first_name;\n        let lastName = userData.last_name;\n        let birthDate = userData.birth_date;\n        let phoneNumber = userData.phone_number; \n\n        let message = {\n            method: 'sendMessage',\n            chat_id: userData.chat_id,\n            text: `№${recordId}\\nІм'я: ${firstName}\\nПрізвище: ${lastName}\\nДата народження: ${new Date(birthDate).toISOString().split('T')[0]}\\nНомер телефону: ${phoneNumber}`\n        };\n\n\n        messages.push({ ...msg, payload: message });\n    });\n\n    return [messages];\n} else {\n    msg.payload = {\n        method: 'sendMessage',\n        chat_id: msg.params[0],\n        text: \"На жаль, ми не змогли знайти ваші дані.\"\n    };\n\n    return msg;\n}\n",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 730,
+        "y": 360,
+        "wires": [
+            [
+                "2deff4032bf09fa2"
+            ]
+        ]
+    },
+    {
+        "id": "3b56aebb99a8214e",
+        "type": "function",
+        "z": "f63565221e40ba98",
+        "name": "message callback",
+        "func": "let msgData = msg.payload;\n\nif (msgData.message) {\n    let chatId = msgData.message.chat.id || msgData.message.from.id;  \n    let text = msgData.message.text;\n\n    node.warn(chatId);\n\n    if (text === '/start') {\n        msg.payload = {\n            method: 'sendMessage',\n            chat_id: chatId,\n            text: 'Вітаємо! Ви можете використати команду /mydata, щоб переглянути ваші дані.',\n            reply_markup: {\n                inline_keyboard: [\n                    [{ text: 'Вписати дані самостійно', callback_data: 'manual_entry' }]\n                ]\n            }\n        };\n        return [msg, null];  \n    }\n\n\n    if (text === '/mydata') {\n        let chatId = msgData.message.chat.id || msgData.from.id;\n        if (!chatId) {\n            msg.payload = {\n                method: 'sendMessage',\n                chat_id: chatId,\n                text: \"Помилка: не вдалося отримати ваш chat_id.\"\n            };\n            return [msg, null];\n        }\n        msg.payload = {\n            chat_id: chatId\n        };\n        msg.params = [chatId];\n        return [msg, null];\n    }\n\n    if (text.includes(',')) {\n        let userDetails = text.split(',');\n        if (userDetails.length === 4) { \n            let firstName = userDetails[0].trim();\n            let lastName = userDetails[1].trim();\n            let phoneNumber = userDetails[2].trim(); \n            let birthDate = userDetails[3].trim();  \n\n            const regex = /^\\+380\\d{9}$/;\n            if (!regex.test(phoneNumber)) {\n                msg.payload = {\n                    method: 'sendMessage',\n                    chat_id: chatId,\n                    text: \"Будь ласка, введіть номер телефону у правильному форматі: +380XXXXXXXXX\"\n                };\n                return [msg, null];\n            }\n\n\n            if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(birthDate)) {\n                msg.payload = {\n                    method: 'sendMessage',\n                    chat_id: chatId,\n                    text: \"Будь ласка, введіть дату у правильному форматі: РРРР-ММ-ДД\"\n                };\n                return [msg, null];\n            }\n\n            let dateParts = birthDate.split(\"-\");\n            let year = parseInt(dateParts[0], 10);\n            let month = parseInt(dateParts[1], 10);\n            let day = parseInt(dateParts[2], 10);\n            let dateObject = new Date(year, month - 1, day);\n\n            if (!(dateObject.getFullYear() === year && (dateObject.getMonth() + 1) === month && dateObject.getDate() === day)) {\n                msg.payload = {\n                    method: 'sendMessage',\n                    chat_id: chatId,\n                    text: \"Введено некоректну дату. Будь ласка, спробуйте ще раз.\"\n                };\n                return [msg, null];\n            }\n\n            let recordId = new Date().getTime();\n\n            msg.payload = {\n                method: 'sendMessage',\n                chat_id: chatId,\n                text: `Дякуємо! Ваші дані збережено:\\nІм'я: ${firstName}\\nПрізвище: ${lastName}\\nНомер телефону: ${phoneNumber}\\nДата народження: ${birthDate}`\n            };\n\n            msg.params = [recordId, chatId, firstName, lastName, birthDate, phoneNumber];\n\n            return [msg, msg];\n        } else {\n            msg.payload = {\n                method: 'sendMessage',\n                chat_id: chatId,\n                text: \"Будь ласка, введіть дані у правильному форматі: Ім'я, Прізвище, Номер телефону, Дата народження (РРРР-ММ-ДД)\"\n            };\n            return [msg, null];\n        }\n    }\n\n\n\n\n    msg.payload = {\n        method: 'sendMessage',\n        chat_id: chatId,\n        text: \"Привіт! Ви написали: \" + text\n    };\n    return [msg, null];\n\n} else if (msgData.callback_query) {\n    let chatId = msgData.callback_query.message.chat.id || msgData.callback_query.from.id;\n    let callbackData = msgData.callback_query.data;\n\n\n    node.warn(\"callback_query \" + chatId);\n\n    if (callbackData === 'manual_entry') {\n        msg.payload = {\n            method: 'sendMessage',\n            chat_id: chatId,\n            text: \"Введіть свої дані у форматі: Ім'я, Прізвище, Номер телефону, Дата народження (РРРР-ММ-ДД)\"\n        };\n        return [msg, null];\n    }\n\n    return null;\n}\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 390,
+        "y": 280,
+        "wires": [
+            [
+                "2ceabf2c6aa5b8e5",
+                "postgresql_select",
+                "2deff4032bf09fa2"
+            ]
+        ]
+    },
+    {
+        "id": "2deff4032bf09fa2",
+        "type": "http request",
+        "z": "f63565221e40ba98",
+        "name": "",
+        "method": "POST",
+        "ret": "obj",
+        "paytoqs": "ignore",
+        "url": "https://api.telegram.org/bot<BOTTOKEN>/sendMessage",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [
+            {
+                "keyType": "Content-Type",
+                "keyValue": "",
+                "valueType": "application/json",
+                "valueValue": ""
+            }
+        ],
+        "x": 810,
+        "y": 280,
+        "wires": [
+            [
+                "537a2f036e72d6a1"
+            ]
+        ]
+    }
+]
