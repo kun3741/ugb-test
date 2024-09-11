@@ -15,6 +15,9 @@ Replace `<BOTTOKEN>` to your Telegram bot token.
 
 Add new postgreSQLConfig config, using postgesql nodes.
 
+Set webhook for correct work.
+`https://api.telegram.org/bot<BOTTOKEN>/setWebhook?url=https://LINK-TO-YOUR-NODERED-FLOW/telegram`
+
 
 ## 👤 About developer
 **Project made by Volodymyr Dedeliuk.**
